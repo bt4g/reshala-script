@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # ============================================================ #
-# ==      ИНСТРУМЕНТ «РЕШАЛА» v0.27 - ФИНАЛЬНАЯ ПРАВКА        ==
+# ==      ИНСТРУМЕНТ «РЕШАЛА» v0.28 - УЛУЧШЕННЫЙ И ДОПОЛНЕННЫЙ ==
 # ============================================================ #
-# ==       Теперь он сам себя обновляет и чинит.             ==
+# ==    Теперь он умнее, чинит себя и предлагает лучшее.     ==
 # ============================================================ #
 
 set -euo pipefail
 
 # --- КОНСТАНТЫ И ПЕРЕМЕННЫЕ ---
-readonly VERSION="v0.27"
+readonly VERSION="v0.28"
 readonly SCRIPT_URL="https://raw.githubusercontent.com/DonMatteoVPN/reshala-script/main/install_reshala.sh"
 CONFIG_FILE="${HOME}/.reshala_config"
 LOGFILE="/var/log/reshala_ops.log"
@@ -106,19 +106,41 @@ run_update() {
 
 
 # --- ОСНОВНЫЕ МОДУЛИ СКРИПТА ---
-apply_bbr() { 
+apply_bbr() {
     log "🚀 ЗАПУСК ТУРБОНАДДУВА (BBR/CAKE)..."
     local net_status; net_status=$(get_net_status)
     local current_cc; current_cc=$(echo "$net_status" | cut -d'|' -f1)
     local current_qdisc; current_qdisc=$(echo "$net_status" | cut -d'|' -f2)
+    local cake_available; cake_available=$(modprobe sch_cake &>/dev/null && echo "true" || echo "false")
+
     echo "--- ДИАГНОСТИКА ТВОЕГО ДВИГАТЕЛЯ ---"; echo "Алгоритм: $current_cc"; echo "Планировщик: $current_qdisc"; echo "------------------------------------"
-    if [[ ("$current_cc" == "bbr" || "$current_cc" == "bbr2") && ("$current_qdisc" == "cake" || "$current_qdisc" == "fq") ]]; then
-        echo -e "${C_GREEN}✅ Ты уже на форсаже. Не мешай машине работать.${C_RESET}"; log "Проверка «Форсаж»: ОК."; return; fi
-    echo "Хм, ездишь на стоке. Пора залить ракетное топливо."
+
+    if [[ ("$current_cc" == "bbr" || "$current_cc" == "bbr2") && "$current_qdisc" == "cake" ]]; then
+        echo -e "${C_GREEN}✅ Ты уже на максимальном форсаже (BBR+CAKE). Не мешай машине работать.${C_RESET}"; log "Проверка «Форсаж»: Максимум."; return
+    fi
+
+    if [[ ("$current_cc" == "bbr" || "$current_cc" == "bbr2") && "$current_qdisc" == "fq" && "$cake_available" == "true" ]]; then
+        echo -e "${C_YELLOW}⚠️ У тебя неплохо (BBR+FQ), но можно лучше. CAKE доступен.${C_RESET}"
+        read -p "   Хочешь проапгрейдиться до CAKE? Это топчик. (y/n): " upgrade_confirm
+        if [[ "$upgrade_confirm" != "y" && "$upgrade_confirm" != "Y" ]]; then
+            echo "Как скажешь. Остаёмся на FQ."; return
+        fi
+        echo "Красава. Делаем как надо."
+    elif [[ "$current_cc" != "bbr" && "$current_cc" != "bbr2" ]]; then
+        echo "Хм, ездишь на стоке. Пора залить ракетное топливо."
+    fi
+
     local available_cc; available_cc=$(sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | awk -F'= ' '{print $2}')
     local preferred_cc="bbr"; if [[ "$available_cc" == *"bbr2"* ]]; then preferred_cc="bbr2"; fi
+    
     local preferred_qdisc="fq"
-    if modprobe sch_cake &>/dev/null; then preferred_qdisc="cake"; else log "⚠️ 'cake' не найден, ставлю 'fq'."; modprobe sch_fq &>/dev/null; fi
+    if [[ "$cake_available" == "true" ]]; then 
+        preferred_qdisc="cake"
+    else
+        log "⚠️ 'cake' не найден, ставлю 'fq'."
+        modprobe sch_fq &>/dev/null
+    fi
+
     local tcp_fastopen_val=0; [[ $(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo 0) -ge 1 ]] && tcp_fastopen_val=3
     local CONFIG_SYSCTL="/etc/sysctl.d/99-reshala-boost.conf"
     log "🧹 Чищу старое говно..."; sudo rm -f /etc/sysctl.d/*bbr*.conf /etc/sysctl.d/*network-optimizations*.conf
@@ -259,13 +281,21 @@ display_header() {
     local net_status; net_status=$(get_net_status)
     local cc; cc=$(echo "$net_status" | cut -d'|' -f1)
     local qdisc; qdisc=$(echo "$net_status" | cut -d'|' -f2)
-    if [[ "$cc" == "bbr" || "$cc" == "bbr2" ]]; then local cc_status="${C_GREEN}АКТИВЕН ($cc + $qdisc)${C_RESET}"; else local cc_status="${C_YELLOW}СТОК ($cc)${C_RESET}"; fi
+    if [[ "$cc" == "bbr" || "$cc" == "bbr2" ]]; then 
+        if [[ "$qdisc" == "cake" ]]; then
+            local cc_status="${C_GREEN}МАКСИМУМ ($cc + $qdisc)${C_RESET}"
+        else
+            local cc_status="${C_GREEN}АКТИВЕН ($cc + $qdisc)${C_RESET}"
+        fi
+    else 
+        local cc_status="${C_YELLOW}СТОК ($cc)${C_RESET}"
+    fi
     local ipv6_status; ipv6_status=$(check_ipv6_status)
     clear
     echo -e "${C_CYAN}--- ИНСТРУМЕНТ «РЕШАЛА» ${VERSION} ---${C_RESET}"
     check_for_updates
     if [[ ${UPDATE_AVAILABLE:-0} -eq 1 ]]; then
-        echo -e "${C_YELLOW}🔥 ДОСТУПНО ОБНОВЛЕНИЕ (версия $LATEST_VERSION)${C_RESET}"
+        echo -e "${C_YELLOW}🔥 Новая версия на подходе: ${LATEST_VERSION}${C_RESET}"
     fi
     echo "------------------------------------------------------"
     echo -e "IP Сервера:   ${C_YELLOW}$ip_addr${C_RESET}"
