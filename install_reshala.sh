@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================ #
-# ==      ИНСТРУМЕНТ «РЕШАЛА» v1.9993 - Фикс Скайнета и востановление доступа к переустанвленному серверу   ==
+# ==      ИНСТРУМЕНТ «РЕШАЛА» v1.9993 - Фикс Скайнета и востановление доступа ==
 # ============================================================ #
 set -uo pipefail
 
@@ -9,7 +9,7 @@ set -uo pipefail
 # ============================================================ #
 readonly VERSION="v1.9993"
 # Убедись, что ветка (dev/main) правильная!
-readonly REPO_BRANCH="dev" 
+readonly REPO_BRANCH="main" 
 readonly SCRIPT_URL="https://raw.githubusercontent.com/DonMatteoVPN/reshala-script/refs/heads/${REPO_BRANCH}/install_reshala.sh"
 readonly MODULES_URL="https://raw.githubusercontent.com/DonMatteoVPN/reshala-script/refs/heads/${REPO_BRANCH}/modules"
 CONFIG_FILE="${HOME}/.reshala_config"
